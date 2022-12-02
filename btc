@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+
+# https://www.blockchain.com/explorer/api/blockchain_api
+
+import argparse
+from requests import get
+
+
+if __name__ == '__main__':
+    # def write_file(data, name='out'):
+    #     with open(name+'.json', 'w') as f:
+            # f.write(data)
+
+    def root_handler(args, res):
+        # # save
+        # if not args.no_save:
+        #     write_file(res)
+        # # stdout
+        # if args.stdout:
+        #     print(res)
+        print(res)
+
+    def blk_handler(args):
+        # validate
+        if args.hex and not args.rawblock:
+            raise SystemExit('error: argument -X/--hex only allowed with argument -b/--rawblock')
+
+        # api requests
+        # single block
+        if args.rawblock:
+            if args.hex:
+                fmt = '?format=hex'
+            else:
+                fmt = ''
+            res = get(f'https://blockchain.info/rawblock/{args.rawblock[0]}{fmt}').text
+
+        # block height
+        elif args.block_height:
+            res = get(f'https://blockchain.info/block-height/{args.block_height[0]}?format=json').text
+
+        # latest block
+        elif args.latestblock:
+            res = get('https://blockchain.info/latestblock').text
+
+        # blocks
+        elif args.blocks:
+            res = get(f'https://blockchain.info/blocks/{args.blocks[0]}?format=json').text
+
+        root_handler(args, res)
+
+    def txn_handler(args):
+        # validate
+        if args.hex and not args.rawtx:
+            raise SystemExit('error: argument -X/--hex only allowed with argument -t/--rawtx')
+
+        # api requests
+        # single transaction
+        if args.rawtx:
+            res = get(f'https://blockchain.info/rawtx/{args.rawtx[0]}').text
+
+        # unconfirmed transactions
+        elif args.unconfirmed_transactions:
+            res = get('https://blockchain.info/unconfirmed-transactions?format=json').text
+
+        root_handler(args, res)
+
+    def adr_handler(args):
+        # validate
+        if (args.limit and not (args.rawaddr or args.unspent)):
+            raise SystemExit('error: argument -L/--limit only allowed with argument -a/--rawaddr or argument -u/--unspent')
+        if (args.offset and not (args.rawaddr or args.unspent)):
+            raise SystemExit('error: argument -O/--offset only allowed with argument -a/--rawaddr or argument -m/--multiaddr')
+        if args.confirmation and not args.unspent:
+            raise SystemExit('error: argument -C/--confirmation only allowed with argument -u/--unspent')
+
+        # call api
+        # single address
+        if args.rawaddr:
+            if args.limit:
+                lim = f'&limit={args.limit[0]}'
+            else:
+                lim = ''
+            if args.offset:
+                ofst = f'&offset={args.offset[0]}'
+            else:
+                ofst = ''
+            res = get(f'https://blockchain.info/rawaddr/{args.rawaddr[0]}?{lim}{ofst}').text
+
+        # multi address
+        elif args.multiaddr:
+            if args.offset:
+                ofst = f'&offset={args.offset[0]}'
+            else:
+                ofst = ''
+            res = get((f'https://blockchain.info/multiaddr?active={"|".join(args.multiaddr)}{ofst}').rstrip('?')).text
+
+        # unspent outputs
+        elif args.unspent:
+            if args.limit:
+                lim = f'&limit={args.limit[0]}'
+            else:
+                lim = ''
+            if args.confirmation:
+                cnfrm = f'&confirmations={args.confirmation[0]}'
+            else:
+                cnfrm = ''
+            res = get((f'https://blockchain.info/unspent/?active={"|".join(args.unspent)}{lim}{cnfrm}').rstrip('?')).text
+
+        # balance
+        elif args.balance:
+            res = get(f'https://blockchain.info/balance?active={"|".join(args.balance)}').text
+
+        root_handler(args, res)
+
+    def chart_handler(args):
+        # call api
+        # charts
+        if args.charts:
+            res = get(f'https://blockchain.info/charts/{args.charts[0]}?format=json').text
+
+        root_handler(args, res)
+
+
+    parser = argparse.ArgumentParser(prog='btc', description = 'query blockchain.com api', epilog = '(https://nairvarun.github.io)', conflict_handler='resolve')
+    subparser = parser.add_subparsers()
+
+    parser_blk = subparser.add_parser('blk')
+    group_blk = parser_blk.add_mutually_exclusive_group(required=True)
+    group_blk.add_argument( '-b', '--rawblock',                  help='single block',                            nargs=1)
+    group_blk.add_argument( '-n', '--block-height',              help='block height',                            nargs=1)
+    group_blk.add_argument( '-l', '--latestblock',               help='latest block',                            action='store_true')
+    group_blk.add_argument( '-k', '--blocks',                    help='blocks (time in milliseconds/pool name)', nargs=1)
+    parser_blk.add_argument('-X', '--hex',                       help='return binary (Hex encoded)',             action='store_true')       # only allowed w/ -b
+    parser_blk.set_defaults(handler=blk_handler)
+
+    parser_txn = subparser.add_parser('txn')
+    group_txn = parser_txn.add_mutually_exclusive_group(required=True)
+    group_txn.add_argument( '-t', '--rawtx',                     help='single transaction',                      nargs=1)
+    group_txn.add_argument( '-p', '--unconfirmed-transactions',  help='unconfirmed transactions',                action='store_true')
+    parser_txn.add_argument('-X', '--hex',                       help='return binary (Hex encoded)',             action='store_true')       # only allowed w/ -t
+    parser_txn.set_defaults(handler=txn_handler)
+
+    parser_adr = subparser.add_parser('adr')
+    group_adr = parser_adr.add_mutually_exclusive_group(required=True)
+    group_adr.add_argument( '-a', '--rawaddr',                   help='single address (base58/xpub)',            nargs=1)
+    group_adr.add_argument( '-m', '--multiaddr',                 help='multiple addresses (base58/xpub)',        nargs='+')
+    group_adr.add_argument( '-u', '--unspent',                   help='unspent outputs (base58/xpub)',           nargs='+')
+    group_adr.add_argument( '-s', '--balance',                   help='unspent outputs (base58/xpub)',           nargs='+')
+    parser_adr.add_argument('-L', '--limit',                     help='limit to n transactions',                 nargs=1)                   # oly allowed w/ -a & -u
+    parser_adr.add_argument('-O', '--offset',                    help='offset by n transactions',                nargs=1)                   # oly allowed w/ -a & -m
+    parser_adr.add_argument('-C', '--confirmation',              help='set minimum confirmations',               nargs=1)                   # oly allowed w/ -u
+    parser_adr.set_defaults(handler=adr_handler)
+
+    parser_chart = subparser.add_parser('chart')
+    parser_chart.add_argument(dest='type',                       help='chart data',                              nargs=1)
+    parser_chart.set_defaults(handler=chart_handler)
+
+    # parser.add_argument('-N', '--no-save',                      help='don\'t save output',                      action='store_true')
+    # parser.add_argument('-S', '--stdout',                       help='print to stdout',                         action='store_true')
+
+
+    args = parser.parse_args()
+    args.handler(args)
